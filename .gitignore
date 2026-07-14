@@ -1,0 +1,12 @@
+.env
+__pycache__/
+*.pyc
+.DS_Store
+.venv/
+out/
+data/historicos/
+data/mvp_layout/01_EntradaSolicitudes/*
+!data/mvp_layout/01_EntradaSolicitudes/.gitkeep
+data/mvp_layout/02_SalidaReportes/*
+!data/mvp_layout/02_SalidaReportes/.gitkeep
+data/input/
