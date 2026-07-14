@@ -179,6 +179,12 @@ Archivos generados:
 - `processing_state.json`: estado usado para detectar solicitudes ya procesadas.
 - `decisions.jsonl`: respaldo local de decisiones cuando `COSMOS_ENABLED=false`.
 
+`recommendations.json` y `decisions.jsonl` conservan la estructura completa,
+incluyendo evidencia y objetos devueltos por IA. `recommendations.csv` es una
+vista plana para revisión humana; cuando el LLM devuelve listas u objetos en
+campos como `reasons` o `missing_information`, el reporte los serializa como
+texto JSON dentro de la celda para que el archivo no falle ni pierda contenido.
+
 ## Estados De Recomendación
 
 El sistema usa tres estados:
@@ -550,6 +556,10 @@ Si una regla local está en `RECHAZAR`, la IA no debe convertirla en `APROBAR`.
 Si una regla local está en `REVISION`, la IA debe mantener revisión salvo que
 haya evidencia clara para resolver la excepción.
 
+La respuesta del LLM puede traer `reasons`, `missing_information` y `evidence`
+como texto simple o como objetos estructurados. `recommendation.py` normaliza
+esas salidas antes de guardarlas para que el JSON y el CSV sean estables.
+
 Si la IA está apagada, este prompt no se ejecuta.
 
 ### `prompts/clasificar_documentos.txt`
@@ -656,7 +666,9 @@ solo como contexto auxiliar.
 
 ### `src/auxilios_mvp/recommendation.py`
 
-Ejecuta el motor local de reglas y produce la recomendación final.
+Ejecuta el motor local de reglas, llama al LLM para complementar la recomendación
+y normaliza la respuesta de IA para que razones, faltantes y evidencia queden en
+formatos persistibles.
 
 ### `src/auxilios_mvp/processing_state.py`
 
@@ -664,7 +676,14 @@ Calcula huellas de solicitudes y controla reprocesamiento.
 
 ### `src/auxilios_mvp/reporting.py`
 
-Genera `recommendations.csv`.
+Genera `recommendations.csv`. Convierte valores complejos devueltos por IA
+como listas o diccionarios a texto JSON dentro de las celdas.
+
+### `src/auxilios_mvp/json_utils.py`
+
+Contiene utilidades de JSON usadas por salidas locales y llamadas a Azure
+OpenAI. Convierte tipos no serializables directamente, como `Timestamp`, fechas,
+valores `NaN` y tipos numpy/pandas, a valores JSON seguros.
 
 ### `src/auxilios_mvp/cosmos_store.py`
 
