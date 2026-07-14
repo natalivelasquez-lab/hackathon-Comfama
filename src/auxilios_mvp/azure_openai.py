@@ -5,7 +5,7 @@ from typing import Any
 
 try:
     import requests
-except Exception:  # pragma: no cover - dependency optional in local fallback
+except Exception:  # pragma: no cover - optional runtime dependency
     requests = None
 
 from .json_utils import to_jsonable, try_parse_json

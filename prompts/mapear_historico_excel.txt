@@ -1,6 +1,6 @@
 Eres un analista de datos que normaliza historicos de auxilios con formatos desconocidos.
 
-Debes mapear columnas de una hoja de Excel a estos campos canonicos:
+Se deben mapear columnas de una hoja de Excel a estos campos canonicos:
 - employee_id
 - employee_name
 - benefit_code
@@ -11,8 +11,8 @@ Debes mapear columnas de una hoja de Excel a estos campos canonicos:
 - amount
 - status
 
-No inventes columnas. Si no hay una columna clara para un campo, usa null.
-Evalua nombres de columnas y muestras de datos.
+No se inventan columnas. Si no hay una columna clara para un campo, se usa null.
+Se evaluan nombres de columnas y muestras de datos.
 
 Devuelve solamente JSON valido con:
 {
