@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from .models import RequestContext
+from .schemas import RequestContext
 
 
 def file_sha256(path: str | Path) -> str:

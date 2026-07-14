@@ -1,9 +1,27 @@
 from __future__ import annotations
 
 import csv
+import json
 from pathlib import Path
+from typing import Any
 
-from .models import Recommendation
+from .json_utils import to_jsonable
+from .schemas import Recommendation
+
+
+def _cell(value: Any) -> str:
+    safe_value = to_jsonable(value)
+    if safe_value is None:
+        return ""
+    if isinstance(safe_value, str):
+        return safe_value
+    if isinstance(safe_value, int | float | bool):
+        return str(safe_value)
+    return json.dumps(safe_value, ensure_ascii=False)
+
+
+def _join_cell(values: list[Any]) -> str:
+    return " | ".join(_cell(value) for value in values if _cell(value))
 
 
 def write_recommendations_csv(path: str | Path, recommendations: list[Recommendation]) -> None:
@@ -33,7 +51,7 @@ def write_recommendations_csv(path: str | Path, recommendations: list[Recommenda
                     "recommended_status": item.recommended_status,
                     "confidence": item.confidence,
                     "summary": item.summary,
-                    "reasons": " | ".join(item.reasons),
-                    "missing_information": " | ".join(item.missing_information),
+                    "reasons": _join_cell(item.reasons),
+                    "missing_information": _join_cell(item.missing_information),
                 }
             )

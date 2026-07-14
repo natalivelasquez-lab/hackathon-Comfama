@@ -9,7 +9,7 @@ from typing import Any
 import pandas as pd
 
 from .azure_openai import AzureOpenAIClient
-from .models import CANONICAL_HISTORY_FIELDS, HistoryRecord, MappingCandidate, parse_date
+from .schemas import CANONICAL_HISTORY_FIELDS, HistoryRecord, MappingCandidate, parse_date
 
 
 FIELD_HINTS = {

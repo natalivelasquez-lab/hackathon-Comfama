@@ -90,7 +90,7 @@ LAYOUT_REPORTS_DIR=02_SalidaReportes
 HISTORY_EXCEL_FILENAME=Historico_Auxilios.xlsx
 BENEFITS_FILENAME=beneficios.csv
 
-AZURE_OPENAI_ENABLED=false
+AZURE_OPENAI_ENABLED=true
 COSMOS_ENABLED=false
 ```
 
@@ -104,7 +104,7 @@ Variables principales:
 - `HISTORY_EXCEL_FILENAME`: nombre del Excel histórico.
 - `BENEFITS_FILENAME`: nombre del CSV de reglas.
 - `PROCESSING_POLICY`: controla reprocesamiento.
-- `AZURE_OPENAI_ENABLED`: activa/desactiva uso de IA para extracción/recomendación.
+- `AZURE_OPENAI_ENABLED`: activa el uso de IA. Para análisis documental debe estar en `true`.
 - `COSMOS_ENABLED`: activa/desactiva guardado de decisiones en Cosmos DB.
 
 ## Políticas De Reprocesamiento
@@ -343,7 +343,8 @@ El sistema:
 6. Genera `history_normalized.json`.
 
 Si `AZURE_OPENAI_ENABLED=true`, el prompt `mapear_historico_excel.txt` puede
-ayudar a mejorar el mapeo. Si está en `false`, usa heurísticas locales.
+ayudar a mejorar el mapeo. Si está en `false`, el sistema solo puede usar
+inferencia local para esta normalización del histórico.
 
 ## Análisis Documental
 
@@ -351,28 +352,42 @@ El análisis documental está en:
 
 ```text
 src/auxilios_mvp/document_analyzer.py
-src/auxilios_mvp/pdf_text.py
+src/auxilios_mvp/document_media.py
 ```
 
-El flujo actual:
+El flujo actual requiere IA:
 
-1. Lee PDFs con `pypdf`.
-2. Extrae texto cuando el PDF lo permite.
-3. Clasifica por heurísticas locales:
+1. Prepara el archivo con `document_media.py`.
+2. Si es PDF, renderiza las primeras páginas como imágenes con PyMuPDF.
+3. Si el PDF tiene texto extraíble, lo adjunta como contexto adicional.
+4. Envía imágenes y texto al prompt `clasificar_documentos.txt`.
+4. La IA clasifica semánticamente el soporte, sin depender de palabras clave
+   exactas ni nombres de campos fijos:
    - `factura`
    - `formula_medica`
    - `certificado_eps`
+   - `certificado_escolar`
+   - `soporte_pago`
    - `otro`
-4. Extrae candidatos simples:
-   - identificaciones,
+5. Después llama `extraer_datos_documento.txt` con el mismo contenido multimodal
+   para extraer datos estructurados
+   con criterio semántico:
+   - emisor,
+   - número de documento,
    - fechas,
+   - identificaciones,
+   - beneficiario,
+   - conceptos,
    - montos,
-   - extracto de texto.
-5. Si la IA está activa, llama el prompt `extraer_datos_documento.txt`.
+   - banderas de calidad,
+   - evidencia auditable.
+6. Si Azure OpenAI no está configurado, el flujo se detiene con un error claro.
 
-Si el PDF está escaneado y no tiene texto embebido, el fallback local puede no
-extraer suficiente información. En ese caso la solicitud tiende a quedar en
-`REVISION`.
+Ya no existe clasificación local por palabras clave dentro del analizador
+documental.
+
+Nota importante: para que el análisis documental funcione hay que tener
+`AZURE_OPENAI_ENABLED=true` y configurar endpoint, API key y deployment.
 
 ## Evaluador Local De Reglas
 
@@ -413,14 +428,15 @@ Los prompts están en:
 prompts/
 ```
 
-Importante: los prompts solo se usan cuando `AZURE_OPENAI_ENABLED=true`.
-Con la configuración local actual:
+Importante: los prompts se usan cuando `AZURE_OPENAI_ENABLED=true`.
+Para este MVP, el análisis documental requiere:
 
 ```env
-AZURE_OPENAI_ENABLED=false
+AZURE_OPENAI_ENABLED=true
 ```
 
-el flujo usa reglas y heurísticas locales, sin llamadas a IA.
+Si Azure OpenAI no está configurado, el flujo se detiene antes de analizar
+documentos.
 
 ### `prompts/mapear_historico_excel.txt`
 
@@ -477,9 +493,11 @@ src/auxilios_mvp/document_analyzer.py
 Entrada que recibe:
 
 - nombre del archivo,
-- tipo documental inferido localmente,
-- extracto de texto del PDF,
-- campos extraídos localmente.
+- tipo documental clasificado por IA,
+- resultado de `clasificar_documentos.txt`,
+- imágenes renderizadas del PDF o imagen original,
+- texto extraído del PDF cuando existe,
+- tipos documentales soportados.
 
 Salida esperada:
 
@@ -502,8 +520,8 @@ Salida esperada:
 }
 ```
 
-Si la IA está apagada, el sistema usa extracción local básica con expresiones
-regulares.
+Si la IA está apagada o incompleta, este prompt no se ejecuta y el flujo falla
+de forma explícita. No hay extractor documental local por expresiones regulares.
 
 ### `prompts/generar_recomendacion.txt`
 
@@ -536,7 +554,7 @@ Si la IA está apagada, este prompt no se ejecuta.
 
 ### `prompts/clasificar_documentos.txt`
 
-Función prevista:
+Función:
 
 Clasificar documentos por tipo documental usando IA:
 
@@ -549,13 +567,14 @@ Clasificar documentos por tipo documental usando IA:
 
 Estado actual:
 
-Este prompt está preparado como referencia, pero el flujo actual no lo llama
-directamente. Hoy la clasificación se hace dentro de `document_analyzer.py` con
-heurísticas locales y, cuando IA está activa, se usa `extraer_datos_documento.txt`
-para devolver también `document_type`.
+Este prompt sí se usa directamente en `document_analyzer.py` cuando
+`AZURE_OPENAI_ENABLED=true`. Es la primera llamada de IA del análisis documental.
+Su objetivo es evitar que la clasificación dependa de palabras clave rígidas,
+porque los proveedores pueden escribir con estructuras, nombres y formatos
+distintos.
 
-Si se quiere separar clasificación y extracción en dos llamadas distintas, este
-prompt es el punto de partida.
+La salida de este prompt alimenta `extraer_datos_documento.txt`, que hace la
+extracción estructurada.
 
 ## Módulos Principales Del Código
 
@@ -577,6 +596,13 @@ Centraliza variables de entorno y flags:
 - estado de Azure OpenAI,
 - estado de Cosmos DB,
 - política de reprocesamiento.
+
+### `src/auxilios_mvp/schemas.py`
+
+Define las estructuras internas de datos del flujo. No contiene modelos de IA.
+Agrupa objetos como solicitud, análisis documental, regla del beneficio,
+registro histórico y recomendación para que los módulos compartan el mismo
+contrato.
 
 ### `src/auxilios_mvp/pipeline.py`
 
@@ -618,7 +644,15 @@ Normaliza el histórico Excel a JSON canónico.
 
 ### `src/auxilios_mvp/document_analyzer.py`
 
-Clasifica y extrae información básica de documentos.
+Coordina el análisis documental con Azure OpenAI. Llama primero al prompt de
+clasificación y luego al prompt de extracción. No contiene clasificación local
+por palabras clave.
+
+### `src/auxilios_mvp/document_media.py`
+
+Prepara archivos para el modelo omnimodal. Renderiza páginas de PDF como
+imágenes, adjunta imágenes originales cuando aplique y agrega texto extraído
+solo como contexto auxiliar.
 
 ### `src/auxilios_mvp/recommendation.py`
 
@@ -665,10 +699,10 @@ PROCESSING_POLICY=reprocess_all
 
 ## Azure OpenAI
 
-Por defecto está desactivado:
+Para análisis documental está requerido:
 
 ```env
-AZURE_OPENAI_ENABLED=false
+AZURE_OPENAI_ENABLED=true
 ```
 
 Para activarlo:
@@ -681,8 +715,8 @@ AZURE_OPENAI_DEPLOYMENT_TEXT=...
 AZURE_OPENAI_DEPLOYMENT_OMNIMODAL=...
 ```
 
-Con IA apagada, el MVP sigue funcionando con extracción local y reglas
-determinísticas.
+Con IA apagada, el MVP no analiza documentos. Las reglas determinísticas que
+quedan son reglas de negocio auditables, no lectura documental.
 
 ## Operación Recomendada
 
@@ -722,9 +756,9 @@ PROCESSING_POLICY=skip_unchanged
 
 ## Limitaciones Actuales
 
-- La extracción local de PDFs escaneados puede ser insuficiente si no tienen texto embebido.
-- `certificado_escolar` y `soporte_pago` están parametrizados, pero la clasificación local fuerte hoy cubre principalmente `factura`, `formula_medica`, `certificado_eps` y `otro`.
-- Los criterios textuales del CSV se incluyen como evidencia y contexto, pero las validaciones determinísticas dependen de campos estructurados.
+- El análisis documental depende de Azure OpenAI y de un deployment compatible con contenido multimodal.
+- Por costo y latencia, se envían las primeras páginas configuradas del PDF al modelo.
+- Los criterios textuales del CSV se incluyen como evidencia y contexto; las reglas que quedan son validaciones de negocio sobre campos estructurados.
 - La publicación o consolidación semanal externa no forma parte del flujo local actual.
 
 ## Resultado Esperado

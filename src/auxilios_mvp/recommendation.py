@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import re
+import json
 from datetime import date, datetime
 from typing import Any
 
 from .azure_openai import AzureOpenAIClient
-from .models import BenefitRule, DocumentAnalysis, Recommendation, RequestContext
+from .json_utils import to_jsonable
+from .schemas import BenefitRule, DocumentAnalysis, Recommendation, RequestContext
 from .settings import read_prompt
 
 
@@ -54,7 +56,6 @@ def _doc_dates(doc: DocumentAnalysis) -> list[date]:
         fields.get("document_date"),
         fields.get("fecha"),
     ]
-    values.extend(fields.get("possible_dates") or [])
     parsed = [_parse_date(value) for value in values]
     return [value for value in parsed if value is not None]
 
@@ -67,7 +68,6 @@ def _doc_amounts(doc: DocumentAnalysis) -> list[float]:
         fields.get("invoice_amount"),
         fields.get("valor"),
     ]
-    values.extend(fields.get("possible_amounts") or [])
     parsed = [_parse_amount(value) for value in values]
     return [value for value in parsed if value is not None]
 
@@ -79,7 +79,6 @@ def _doc_ids(doc: DocumentAnalysis, *field_names: str) -> list[str]:
         value = fields.get(field)
         if value:
             ids.append(str(value))
-    ids.extend(str(value) for value in fields.get("possible_ids") or [])
     return ids
 
 
@@ -88,6 +87,36 @@ def _rule_eval(name: str, status: str, reason: str, evidence: Any = None) -> dic
     if evidence is not None:
         payload["evidence"] = evidence
     return payload
+
+
+def _as_text_list(value: Any, fallback: list[str]) -> list[str]:
+    if not isinstance(value, list):
+        return fallback
+    normalized: list[str] = []
+    for item in value:
+        safe_item = to_jsonable(item)
+        if safe_item is None:
+            continue
+        if isinstance(safe_item, str):
+            normalized.append(safe_item)
+        elif isinstance(safe_item, int | float | bool):
+            normalized.append(str(safe_item))
+        else:
+            normalized.append(json.dumps(safe_item, ensure_ascii=False))
+    return normalized or fallback
+
+
+def _as_evidence_list(value: Any, fallback: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    if not isinstance(value, list):
+        return fallback
+    normalized: list[dict[str, Any]] = []
+    for index, item in enumerate(value, start=1):
+        safe_item = to_jsonable(item)
+        if isinstance(safe_item, dict):
+            normalized.append(safe_item)
+        else:
+            normalized.append({"item": index, "value": safe_item})
+    return normalized or fallback
 
 
 def _history_matches(
@@ -484,11 +513,11 @@ def recommend(
         if response and response.get("recommended_status") in {"APROBAR", "RECHAZAR", "REVISION"}:
             recommendation.recommended_status = response["recommended_status"]
             recommendation.summary = str(response.get("summary") or recommendation.summary)
-            recommendation.reasons = list(response.get("reasons") or recommendation.reasons)
-            recommendation.missing_information = list(
-                response.get("missing_information") or recommendation.missing_information
+            recommendation.reasons = _as_text_list(response.get("reasons"), recommendation.reasons)
+            recommendation.missing_information = _as_text_list(
+                response.get("missing_information"), recommendation.missing_information
             )
-            recommendation.evidence = list(response.get("evidence") or recommendation.evidence)
+            recommendation.evidence = _as_evidence_list(response.get("evidence"), recommendation.evidence)
             recommendation.confidence = float(response.get("confidence") or recommendation.confidence)
 
     return recommendation

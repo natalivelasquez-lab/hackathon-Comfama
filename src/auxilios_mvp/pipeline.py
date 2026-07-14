@@ -39,7 +39,7 @@ def run_local_pipeline(
     log(f"  Salida: {out}")
 
     ai_client = AzureOpenAIClient(settings)
-    log(f"  Azure OpenAI: {'configurado' if ai_client.available() else 'no configurado, usando fallback local'}")
+    log(f"  Azure OpenAI: {'configurado' if ai_client.available() else 'no configurado'}")
     analyzer = DocumentAnalyzer(ai_client=ai_client)
     benefit_rules = load_benefit_rules(benefits_file)
     log(f"  Reglas cargadas: {len(benefit_rules)} claves/alias")

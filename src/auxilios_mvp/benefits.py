@@ -4,7 +4,7 @@ import csv
 from pathlib import Path
 import re
 
-from .models import BenefitRule
+from .schemas import BenefitRule
 
 
 def _bool(value: str | None, default: bool = False) -> bool:

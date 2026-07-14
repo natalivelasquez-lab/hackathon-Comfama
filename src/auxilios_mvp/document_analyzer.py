@@ -1,51 +1,31 @@
 from __future__ import annotations
 
-import re
+import json
 from pathlib import Path
 from typing import Any
 
 from .azure_openai import AzureOpenAIClient
-from .models import DocumentAnalysis
-from .pdf_text import extract_pdf_text
+from .document_media import build_document_content
+from .schemas import DocumentAnalysis
 from .settings import read_prompt
 
 
-def _classify_from_name_and_text(file_name: str, text: str) -> tuple[str, float, list[str]]:
-    blob = f"{file_name}\n{text[:2500]}".lower()
-    warnings: list[str] = []
-    if any(k in blob for k in ["formula", "fórmula", "optometr", "medic"]):
-        return "formula_medica", 0.65, warnings
-    if any(k in blob for k in ["factura", "invoice", "nit", "total", "subtotal"]):
-        return "factura", 0.7, warnings
-    if any(k in blob for k in ["eps", "afiliacion", "afiliación", "beneficiario"]):
-        return "certificado_eps", 0.65, warnings
-    if not text.strip():
-        warnings.append("No hay texto suficiente para clasificar localmente")
-        return "otro", 0.2, warnings
-    return "otro", 0.35, warnings
+SUPPORTED_DOCUMENT_TYPES = {
+    "factura",
+    "formula_medica",
+    "certificado_eps",
+    "certificado_escolar",
+    "soporte_pago",
+    "otro",
+}
 
 
-def _extract_dates(text: str) -> list[str]:
-    patterns = [
-        r"\b\d{4}[-/]\d{1,2}[-/]\d{1,2}\b",
-        r"\b\d{1,2}[-/]\d{1,2}[-/]\d{4}\b",
-    ]
-    dates: list[str] = []
-    for pattern in patterns:
-        dates.extend(re.findall(pattern, text))
-    return dates[:5]
-
-
-def _local_extract_fields(document_type: str, text: str) -> dict[str, Any]:
-    ids = re.findall(r"\b\d{6,12}\b", text)
-    amounts = re.findall(r"\$?\s?\d[\d.,]{3,}", text)
-    return {
-        "document_type": document_type,
-        "possible_ids": ids[:5],
-        "possible_dates": _extract_dates(text),
-        "possible_amounts": amounts[:5],
-        "raw_text_excerpt": text[:1200],
-    }
+def _safe_confidence(value: Any, default: float) -> float:
+    try:
+        confidence = float(value)
+    except (TypeError, ValueError):
+        return default
+    return max(0.0, min(confidence, 1.0))
 
 
 class DocumentAnalyzer:
@@ -58,39 +38,72 @@ class DocumentAnalyzer:
 
     def analyze_file(self, path: str | Path) -> DocumentAnalysis:
         target = Path(path)
-        warnings: list[str] = []
-        text = ""
-        text, local_warnings = extract_pdf_text(target)
-        warnings.extend(local_warnings)
-
-        document_type, confidence, classifier_warnings = _classify_from_name_and_text(target.name, text)
-        warnings.extend(classifier_warnings)
-        extracted_fields = _local_extract_fields(document_type, text)
-
-        if self.ai_client and self.ai_client.available():
-            payload = {
-                "file_name": target.name,
-                "local_document_type": document_type,
-                "text_excerpt": text[:12000],
-                "local_extracted_fields": extracted_fields,
-            }
-            response = self.ai_client.chat_json(
-                deployment=(
-                    self.ai_client.settings.azure_openai_deployment_multimodal
-                    or self.ai_client.settings.azure_openai_deployment_text
-                ),
-                system_prompt=read_prompt("prompts/extraer_datos_documento.txt"),
-                user_payload=payload,
+        if not self.ai_client or not self.ai_client.available():
+            raise RuntimeError(
+                "El analisis documental requiere Azure OpenAI configurado. "
+                "Activa AZURE_OPENAI_ENABLED=true y completa endpoint, API key y deployment."
             )
-            if response:
-                document_type = str(response.get("document_type") or document_type)
-                extracted_fields = response
-                confidence = float(response.get("confidence") or confidence)
+
+        media_content, warnings, extracted_text = build_document_content(target)
+        deployment = (
+            self.ai_client.settings.azure_openai_deployment_multimodal
+            or self.ai_client.settings.azure_openai_deployment_text
+        )
+        classification_payload = {
+            "file_name": target.name,
+            "supported_document_types": sorted(SUPPORTED_DOCUMENT_TYPES),
+            "instruction": (
+                "Clasifica semanticamente el documento usando texto e imagenes adjuntas. "
+                "No dependas de palabras clave fijas ni de plantillas especificas."
+            ),
+        }
+        classification = self.ai_client.chat_json_content(
+            deployment=deployment,
+            system_prompt=read_prompt("prompts/clasificar_documentos.txt"),
+            user_content=[
+                {"type": "text", "text": json.dumps(classification_payload, ensure_ascii=False)},
+                *media_content,
+            ],
+        )
+
+        document_type = str((classification or {}).get("document_type") or "otro")
+        if document_type not in SUPPORTED_DOCUMENT_TYPES:
+            warnings.append(f"IA retorno tipo documental no soportado: {document_type}")
+            document_type = "otro"
+        confidence = _safe_confidence((classification or {}).get("confidence"), 0.5)
+
+        extraction_payload = {
+            "file_name": target.name,
+            "document_type": document_type,
+            "classification": classification or {},
+            "supported_document_types": sorted(SUPPORTED_DOCUMENT_TYPES),
+            "instruction": (
+                "Extrae campos y evidencia con criterio semantico desde texto e imagenes. "
+                "No inventes datos que no esten soportados por evidencia verificable."
+            ),
+        }
+        extraction = self.ai_client.chat_json_content(
+            deployment=deployment,
+            system_prompt=read_prompt("prompts/extraer_datos_documento.txt"),
+            user_content=[
+                {"type": "text", "text": json.dumps(extraction_payload, ensure_ascii=False)},
+                *media_content,
+            ],
+        )
+
+        extracted_fields = extraction or classification or {}
+        if extraction:
+            extracted_type = str(extraction.get("document_type") or document_type)
+            if extracted_type in SUPPORTED_DOCUMENT_TYPES:
+                document_type = extracted_type
+            confidence = _safe_confidence(extraction.get("confidence"), confidence)
+        extracted_fields.setdefault("document_type", document_type)
+        extracted_fields.setdefault("classification", classification or {})
 
         return DocumentAnalysis(
             file_name=target.name,
             document_type=document_type,
-            text=text,
+            text=extracted_text,
             extracted_fields=extracted_fields,
             confidence=confidence,
             warnings=warnings,

@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 import re
 
-from .models import RequestContext
+from .schemas import RequestContext
 
 
 def parse_request_folder(path: str | Path) -> RequestContext:

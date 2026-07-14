@@ -8,7 +8,7 @@ try:
 except Exception:  # pragma: no cover - dependency optional in local fallback
     requests = None
 
-from .json_utils import try_parse_json
+from .json_utils import to_jsonable, try_parse_json
 from .settings import Settings
 
 
@@ -30,20 +30,54 @@ class AzureOpenAIClient:
         if not self.available() or not deployment:
             return None
 
+        return self._post_chat_json(
+            deployment=deployment,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {
+                    "role": "user",
+                    "content": "Devuelve solamente JSON valido.\n\n"
+                    + json.dumps(to_jsonable(user_payload), ensure_ascii=False),
+                },
+            ],
+            temperature=temperature,
+        )
+
+    def chat_json_content(
+        self,
+        *,
+        deployment: str | None,
+        system_prompt: str,
+        user_content: list[dict[str, Any]],
+        temperature: float = 0.0,
+    ) -> dict[str, Any] | None:
+        if not self.available() or not deployment:
+            return None
+
+        content = [{"type": "text", "text": "Devuelve solamente JSON valido."}, *user_content]
+        return self._post_chat_json(
+            deployment=deployment,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": content},
+            ],
+            temperature=temperature,
+        )
+
+    def _post_chat_json(
+        self,
+        *,
+        deployment: str,
+        messages: list[dict[str, Any]],
+        temperature: float,
+    ) -> dict[str, Any] | None:
         endpoint = self.settings.azure_openai_endpoint.rstrip("/")
         url = (
             f"{endpoint}/openai/deployments/{deployment}/chat/completions"
             f"?api-version={self.settings.azure_openai_api_version}"
         )
         body = {
-            "messages": [
-                {"role": "system", "content": system_prompt},
-                {
-                    "role": "user",
-                    "content": "Devuelve solamente JSON valido.\n\n"
-                    + json.dumps(user_payload, ensure_ascii=False),
-                },
-            ],
+            "messages": messages,
             "temperature": temperature,
             "response_format": {"type": "json_object"},
         }
