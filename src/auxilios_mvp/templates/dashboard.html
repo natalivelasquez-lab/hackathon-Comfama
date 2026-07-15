@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Auxilios Calidad de Vida</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
+  </head>
+  <body data-open-metrics="{{ 'true' if open_metrics else 'false' }}">
+    <header class="topbar">
+      <div class="brand-area">
+        <div class="brand">comfama</div>
+        <button class="metrics-button" id="metricsButton" type="button">Ver métricas</button>
+      </div>
+    </header>
+
+    <main class="shell">
+      <section class="page-heading">
+        <div>
+          <p class="breadcrumb">Inicio / Calidad de Vida / Automatización de auxilios</p>
+          <h1>Evaluación inteligente de solicitudes</h1>
+          <p class="lead">Seguimiento local de expedientes, análisis documental con IA y aprobación de recomendaciones.</p>
+        </div>
+        <div class="notification-tile" aria-live="polite">
+          <span class="notification-label">Novedades</span>
+          <strong id="notificationBadge">0</strong>
+          <span id="notificationText">Sin solicitudes nuevas</span>
+        </div>
+      </section>
+
+      <section class="toolbar" aria-label="Acciones principales">
+        <button class="primary" id="analyzePending" type="button">Analizar pendientes</button>
+        <button class="secondary" id="reprocessAll" type="button">Reprocesar todo</button>
+        <button class="secondary" id="refreshDashboard" type="button">Actualizar vista</button>
+        <button class="outline" id="approveSelected" type="button">Aprobar seleccionadas</button>
+        <button class="sus" id="sendSusFactory" type="button">Llevar a SuccessFactory</button>
+      </section>
+
+      <section class="summary-grid" aria-label="Resumen">
+        <article class="metric">
+          <span>Total solicitudes</span>
+          <strong id="countTotal">0</strong>
+        </article>
+        <article class="metric accent">
+          <span>Nuevas</span>
+          <strong id="countNew">0</strong>
+        </article>
+        <article class="metric warn">
+          <span>Modificadas</span>
+          <strong id="countModified">0</strong>
+        </article>
+        <article class="metric ok">
+          <span>Procesadas</span>
+          <strong id="countProcessed">0</strong>
+        </article>
+      </section>
+
+      <section class="work-area">
+        <div class="panel">
+          <div class="panel-heading">
+            <h2>Solicitudes locales</h2>
+            <span id="requestsPath"></span>
+          </div>
+          <div class="request-list" id="requestList"></div>
+        </div>
+
+        <div class="panel progress-panel">
+          <div class="panel-heading">
+            <h2>Proceso en vivo</h2>
+            <span id="jobStatus">Sin ejecución activa</span>
+          </div>
+          <div class="stepper">
+            <div class="step active" id="stepScan"><span>1</span>Escaneo</div>
+            <div class="step" id="stepAnalyze"><span>2</span>Análisis IA</div>
+            <div class="step" id="stepRecommend"><span>3</span>Recomendación</div>
+            <div class="step" id="stepOutput"><span>4</span>Salida</div>
+          </div>
+          <div class="log-box" id="logBox"></div>
+        </div>
+      </section>
+
+      <section class="panel results-panel">
+        <div class="panel-heading">
+          <h2>Recomendaciones generadas</h2>
+          <div class="result-totals">
+            <span class="status-pill approved"><span id="approvedTotal">0</span> aprobadas</span>
+            <span class="status-pill rejected"><span id="rejectedTotal">0</span> rechazadas</span>
+            <span class="status-pill review"><span id="reviewTotal">0</span> revisión</span>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th><input id="selectAll" type="checkbox" aria-label="Seleccionar todas"></th>
+                <th>Solicitud</th>
+                <th>Empleado</th>
+                <th>Beneficio</th>
+                <th>Estado</th>
+                <th>Confianza</th>
+                <th>Resumen</th>
+                <th>Aprobación</th>
+              </tr>
+            </thead>
+            <tbody id="recommendationsTable"></tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+
+    <aside class="metrics-drawer" id="metricsDrawer" aria-hidden="true">
+      <div class="drawer-header">
+        <h2>Métricas</h2>
+        <button id="closeMetrics" type="button" aria-label="Cerrar métricas">×</button>
+      </div>
+      <div class="drawer-content">
+        <p>Vista preparada para indicadores del flujo.</p>
+        <div class="drawer-metric"><span>Aprobadas</span><strong id="drawerApproved">0</strong></div>
+        <div class="drawer-metric"><span>Rechazadas</span><strong id="drawerRejected">0</strong></div>
+        <div class="drawer-metric"><span>Pendientes de revisión</span><strong id="drawerReview">0</strong></div>
+      </div>
+    </aside>
+
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+    <script src="{{ url_for('static', filename='app.js') }}"></script>
+  </body>
+</html>

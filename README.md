@@ -144,6 +144,44 @@ python3 -m pip install -r requirements.txt
 
 ## Ejecución
 
+### Interfaz Web Local
+
+Para la demo se puede levantar el front y el back con un solo comando:
+
+```bash
+PYTHONPATH=src .venv/bin/python run_web.py
+```
+
+La aplicación queda disponible en:
+
+```text
+http://127.0.0.1:5000
+```
+
+La pantalla web permite:
+
+- escanear la carpeta local de solicitudes;
+- distinguir solicitudes nuevas, modificadas y ya procesadas usando
+  `processing_state.json`;
+- ver un badge de novedades;
+- ejecutar el análisis de pendientes o reprocesar todo;
+- seguir logs y pasos del proceso en vivo;
+- revisar recomendaciones generadas;
+- aprobar recomendaciones seleccionadas;
+- registrar una acción dummy de envío a SUS Factory;
+- abrir una vista preparada para métricas.
+
+El front consume los mismos archivos de salida del flujo local:
+
+- `processing_state.json`;
+- `decisions.jsonl`;
+- `recommendations.json`;
+- `document_analyses.json`;
+- `front_actions.json`, generado por la interfaz para aprobaciones y acciones
+  dummy.
+
+### Ejecución Por Terminal
+
 Ejecutar el flujo completo:
 
 ```bash
